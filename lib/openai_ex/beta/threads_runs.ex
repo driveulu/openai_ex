@@ -17,6 +17,7 @@ defmodule OpenaiEx.Beta.Threads.Runs do
     :assistant_id,
     :model,
     :instructions,
+    :additional_instructions,
     :tools,
     :metadata
   ]
