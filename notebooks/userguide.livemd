@@ -2,9 +2,9 @@
 
 ```elixir
 Mix.install([
-  {:openai_ex, "~> 0.9.14"},
-  # {:openai_ex, path: Path.join(__DIR__, "..")},
-  {:kino, "~> 0.15.3"}
+  # {:openai_ex, "~> 0.9.17"},
+  {:openai_ex, path: Path.join(__DIR__, "..")},
+  {:kino, "~> 0.17.0"}
 ])
 ```
 
@@ -45,7 +45,7 @@ Add the following code to the first connection cell:
 ```elixir
 Mix.install(
   [
-    {:openai_ex, "~> 0.9.14"}
+    {:openai_ex, "~> 0.9.17"}
   ]
 )
 ```
@@ -59,7 +59,7 @@ Add the following to your mix.exs file:
 ```elixir
 def deps do
   [
-    {:openai_ex, "~> 0.9.14"}
+    {:openai_ex, "~> 0.9.17"}
   ]
 end
 ```
@@ -820,6 +820,167 @@ This allows you to clean up stored responses that are no longer needed.
 
 For more information on the Responses API, see the [OpenAI API Responses Reference](https://platform.openai.com/docs/api-reference/responses).
 
+## Conversations
+
+```elixir
+alias OpenaiEx.Conversations
+alias OpenaiEx.ConversationItems
+```
+
+Create and manage conversations to store and retrieve conversation state across Response API calls. The API reference can be found at [OpenAI Conversations API](https://platform.openai.com/docs/api-reference/conversations).
+
+### Create Conversation
+
+To create a conversation, call the [`Conversations.create()`](https://platform.openai.com/docs/api-reference/conversations/create) function with metadata and initial items:
+
+```elixir
+conv_req = Conversations.new(
+  metadata: %{"topic" => "demo"},
+  items: [
+    %{
+      type: "message",
+      role: "user",
+      content: [%{type: "input_text", text: "Hello!"}]
+    }
+  ]
+)
+
+{:ok, conversation} = openai |> Conversations.create(conv_req)
+conversation_id = conversation["id"]
+```
+
+### Retrieve Conversation
+
+Use [`Conversations.retrieve()`](https://platform.openai.com/docs/api-reference/conversations/retrieve) to get details about a specific conversation:
+
+```elixir
+{:ok, retrieved_conversation} = openai |> Conversations.retrieve(conversation_id)
+```
+
+### Update Conversation
+
+Use [`Conversations.update()`](https://platform.openai.com/docs/api-reference/conversations/update) to update a conversation's metadata:
+
+```elixir
+update_req = Conversations.new(metadata: %{"topic" => "project-x"})
+{:ok, updated_conversation} = openai |> Conversations.update(conversation_id, update_req)
+```
+
+### Delete Conversation
+
+Delete conversations using the [`Conversations.delete()`](https://platform.openai.com/docs/api-reference/conversations/delete) function:
+
+```elixir
+{:ok, delete_result} = openai |> Conversations.delete(conversation_id)
+```
+
+## Conversation Items
+
+Conversation items represent individual messages, function calls, or other content within a conversation.
+
+### Create a new conversation for items testing
+
+```elixir
+{:ok, items_conversation} = openai |> Conversations.create()
+items_conv_id = items_conversation["id"]
+```
+
+### Create Conversation Items
+
+Use [`ConversationItems.create()`](https://platform.openai.com/docs/api-reference/conversations/createItem) to add multiple items at once:
+
+```elixir
+items_req = ConversationItems.new(
+  items: [
+    %{
+      type: "message",
+      role: "user",
+      content: [%{type: "input_text", text: "Hello!"}]
+    },
+    %{
+      type: "message",
+      role: "user",
+      content: [%{type: "input_text", text: "How are you?"}]
+    }
+  ]
+)
+
+{:ok, created_items} = openai |> ConversationItems.create(items_conv_id, items_req)
+item_id = created_items["data"] |> List.first() |> Map.get("id")
+```
+
+### List Conversation Items
+
+Use [`ConversationItems.list()`](https://platform.openai.com/docs/api-reference/conversations/listItems) with pagination:
+
+```elixir
+{:ok, items} = openai |> ConversationItems.list(items_conv_id, %{limit: 10})
+```
+
+### Retrieve and Delete Item
+
+Retrieve a specific item:
+
+```elixir
+{:ok, retrieved_item} = openai |> ConversationItems.retrieve(items_conv_id, item_id)
+```
+
+Delete an item:
+
+```elixir
+{:ok, delete_item_result} = openai |> ConversationItems.delete(items_conv_id, item_id)
+```
+
+### Cleanup
+
+```elixir
+{:ok, _} = openai |> Conversations.delete(items_conv_id)
+```
+
+## Complete Example: Multi-turn Conversation
+
+```elixir
+# Create conversation with initial message
+chat_conv = Conversations.new(
+  metadata: %{"purpose" => "demo", "topic" => "elixir"},
+  items: [
+    %{
+      type: "message",
+      role: "user",
+      content: [%{type: "input_text", text: "What is Elixir?"}]
+    }
+  ]
+)
+
+{:ok, created_chat} = openai |> Conversations.create(chat_conv)
+chat_conv_id = created_chat["id"]
+
+# Add more messages
+{:ok, _} = openai |> ConversationItems.create(chat_conv_id, ConversationItems.new(
+  items: [
+    %{
+      type: "message",
+      role: "assistant",
+      content: [%{type: "output_text", text: "Elixir is a functional programming language that runs on the Erlang VM."}]
+    },
+    %{
+      type: "message",
+      role: "user",
+      content: [%{type: "input_text", text: "What are its main features?"}]
+    }
+  ]
+))
+
+# List conversation history
+{:ok, conversation_history} = openai |> ConversationItems.list(chat_conv_id)
+IO.inspect(conversation_history, label: "Conversation History")
+
+# Cleanup
+{:ok, _} = openai |> Conversations.delete(chat_conv_id)
+```
+
+For more information on the Conversations API, see the [OpenAI API Conversations Reference](https://platform.openai.com/docs/api-reference/conversations).
+
 ## Image
 
 ### Generate Image
@@ -1204,13 +1365,13 @@ print(f"Sum: {result}")
 """
 
 # Create file upload request
-upload_req = ContainerFiles.new_upload(file: {"hello.py", sample_content})
+cf_upload_req = ContainerFiles.new_upload(file: {"hello.py", sample_content})
 ```
 
 Then we call the [`ContainerFiles.create()`](https://platform.openai.com/docs/api-reference/container-files/create) function to upload the file
 
 ```elixir
-{:ok, upload_res} = openai |> ContainerFiles.create(demo_container_id, upload_req)
+{:ok, upload_res} = openai |> ContainerFiles.create(demo_container_id, cf_upload_req)
 ```
 
 We can verify that the file has been uploaded by listing container files
@@ -1267,7 +1428,7 @@ openai |> Containers.delete(demo_container_id)
 To run a fine-tuning job, we minimally need a training file. We will re-run the file creation request above.
 
 ```elixir
-{:ok,  upload_res} = openai |> Files.create(upload_req)
+{:ok,  upload_res} = openai |> Files.create(upload_req |> Map.put(:purpose, "fine-tune"))
 ```
 
 Next we call `FineTuning.Jobs.new()` to create a new request structure
@@ -1419,112 +1580,232 @@ mod_res = openai |> Moderations.create(mod_req)
 
 For more information on the moderation endpoints see the [Openai API Moderation Reference](https://platform.openai.com/docs/api-reference/moderations)
 
-## Assistant
+## Evals
+
+The Evals API allows you to create and manage evaluation runs for your models. The API reference can be found at [OpenAI Evals API](https://platform.openai.com/docs/api-reference/evals).
 
 ```elixir
-alias OpenaiEx.Beta.Assistants
+alias OpenaiEx.Evals
 ```
 
-### Create Assistant
+### Create Eval
 
-To create an assistant with model and instructions, call the [`Assistant.create()`](https://platform.openai.com/docs/api-reference/assistants/createAssistant) function.
+To create an evaluation, call the [`Eval.create()`](https://platform.openai.com/docs/api-reference/evals/create) function.
 
-First, we setup the create request parameters. This request sets up an Assistant with a code interpreter tool.
+First, we setup the create request parameters:
 
 ```elixir
-hr_assistant_req =
-  Assistants.new(
-    instructions:
-      "You are an HR bot, and you have access to files to answer employee questions about company policies.",
-    name: "HR Helper",
-    tools: [%{type: "file_search"}],
-    model: "gpt-4o-mini"
-  )
+eval_req = Evals.new(
+  name: "Sentiment",
+  data_source_config: %{
+    type: "stored_completions",
+    metadata: %{
+      usecase: "chatbot"
+    }
+  },
+  testing_criteria: [
+    %{
+      type: "label_model",
+      model: "o3-mini",
+      input: [
+        %{
+          role: "developer",
+          content: "Classify the sentiment of the following statement as one of 'positive', 'neutral', or 'negative'"
+        },
+        %{
+          role: "user",
+          content: "Statement: {{item.input}}"
+        }
+      ],
+      passing_labels: [
+        "positive"
+      ],
+      labels: [
+        "positive",
+        "neutral",
+        "negative"
+      ],
+      name: "Example label grader"
+    }
+  ]
+)
 ```
 
-Then we call the create function
+Then we call the create function:
 
 ```elixir
-{:ok, asst} = openai |> Assistants.create(hr_assistant_req)
+{:ok, eval} = openai |> Evals.create(eval_req)
 ```
 
-### Retrieve Assistant
+### Update Eval
 
-Extract the id field for the assistant
+Once created, only the *name* and *metadata* of an evaluation can be modified using the [`Eval.update()`](https://platform.openai.com/docs/api-reference/evals/update) function:
 
 ```elixir
-assistant_id = asst["id"]
+update_req = Evals.new(
+  name: "Updated Evaluation",
+  metadata: %{
+    key: "value"
+  }
+)
+eval_id = eval["id"]
+{:ok, updated_eval} = openai |> Evals.update(eval_id, update_req)
 ```
 
-which can then be used to retrieve the Assistant fields, using the [`Assistant.retrieve()`](https://platform.openai.com/docs/api-reference/assistants/getAssistant) function.
+### List Evals
+
+We use [`Eval.list()`](https://platform.openai.com/docs/api-reference/evals/list) to get a list of evaluations:
 
 ```elixir
-openai |> Assistants.retrieve(assistant_id)
+# Basic usage
+{:ok, evals} = openai |> Evals.list()
+
+# With optional parameters
+{:ok, filtered_evals} = openai |> Evals.list(%{
+  limit: 10,
+  order: "desc"
+})
 ```
 
-### Modify Assistant
+### Delete Eval
 
-Once created, an assistant can be modified using the [`Assistant.update()`](https://platform.openai.com/docs/api-reference/assistants/modifyAssistant) function.
-
-Now we will show an example assistant request using the retrieval tool with a set of files. First we set up the files (in this case a sample HR document) by uploading using the `File` API.
+Finally, we can delete evaluations using the [`Eval.delete()`](https://platform.openai.com/docs/api-reference/evals/delete) function:
 
 ```elixir
-alias OpenaiEx.Files
-
-# hr_file = OpenaiEx.new_file(path: Path.join(__DIR__, "../assets/cyberdyne.txt"))
-hrf_url = "https://raw.githubusercontent.com/restlessronin/openai_ex/main/assets/cyberdyne.txt"
-hr_file = OpenaiEx.new_file(name: hrf_url, content: fetch_blob.(hrf_url))
-
-hr_upload_req = Files.new_upload(file: hr_file, purpose: "assistants")
-{:ok, hr_upload_res} = openai |> Files.create(hr_upload_req)
+{:ok, delete_result} = openai |> Evals.delete(eval_id)
 ```
 
+### Working with Runs
+
+Evals can have multiple runs. Here are the functions for managing runs:
+
 ```elixir
-file_id = hr_upload_res["id"]
+{:ok, eval} = openai |> Evals.create(eval_req)
 ```
 
-Next we create the update request
+**Note:** The following examples are shown as non-executable code blocks because they contain complex data structures and variable dependencies that may not run correctly in all contexts. These examples are syntactically correct and demonstrate the proper API usage, but depend on specific evaluation and run states that may not be available during execution.
+
+#### Create Run
+
+To create a new run for an evaluation:
+
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
-math_assistant_req =
-  Assistants.new(
-    instructions:
-      "You are a personal math tutor. When asked a question, write and run Python code to answer the question.",
-    name: "Math Tutor",
-    tools: [%{type: "code_interpreter"}],
+eval_id = eval["id"]
+run_req = %{
+  name: "gpt-4o-mini",
+  data_source: %{
+    type: "completions",
+    input_messages: %{
+      type: "template",
+      template: [
+        %{
+          role: "developer",
+          content: "Categorize a given news headline into one of the following topics: Technology, Markets, World, Business, or Sports.\n\n# Steps\n\n1. Analyze the content of the news headline to understand its primary focus.\n2. Extract the subject matter, identifying any key indicators or keywords.\n3. Use the identified indicators to determine the most suitable category out of the five options: Technology, Markets, World, Business, or Sports.\n4. Ensure only one category is selected per headline.\n\n# Output Format\n\nRespond with the chosen category as a single word. For instance: \"Technology\", \"Markets\", \"World\", \"Business\", or \"Sports\".\n\n# Examples\n\n**Input**: \"Apple Unveils New iPhone Model, Featuring Advanced AI Features\"  \n**Output**: \"Technology\"\n\n**Input**: \"Global Stocks Mixed as Investors Await Central Bank Decisions\"  \n**Output**: \"Markets\"\n\n**Input**: \"War in Ukraine: Latest Updates on Negotiation Status\"  \n**Output**: \"World\"\n\n**Input**: \"Microsoft in Talks to Acquire Gaming Company for $2 Billion\"  \n**Output**: \"Business\"\n\n**Input**: \"Manchester United Secures Win in Premier League Football Match\"  \n**Output**: \"Sports\" \n\n# Notes\n\n- If the headline appears to fit into more than one category, choose the most dominant theme.\n- Keywords or phrases such as \"stocks\", \"company acquisition\", \"match\", or technological brands can be good indicators for classification.\n"
+        },
+        %{
+          role: "user",
+          content: "{{item.input}}"
+        }
+      ]
+    },
+    sampling_params: %{
+      temperature: 1,
+      max_completions_tokens: 2048,
+      top_p: 1,
+      seed: 42
+    },
     model: "gpt-4o-mini",
-    tool_resources: %{code_interpreter: %{file_ids: [file_id]}}
-  )
+    source: %{
+      type: "file_content",
+      content: [
+        %{
+          item: %{
+            input: "Tech Company Launches Advanced Artificial Intelligence Platform",
+            ground_truth: "Technology"
+          }
+        }
+      ]
+    }
+  }
+}
+
+{:ok, run} = openai |> Evals.create_run(eval_id, run_req)
 ```
 
-Finally we call the endpoint to modify the `Assistant`
+#### Get Run
+
+To retrieve a specific run:
+
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
-{:ok, asst} = openai |> Assistants.update(assistant_id, math_assistant_req)
+run_id = run["id"]
+{:ok, run} = openai |> Evals.get_run(eval_id, run_id)
 ```
 
-### Delete Assistant
+#### Cancel Run
 
-Finally we can delete assistants using the [`Assistant.delete()`](https://platform.openai.com/docs/api-reference/assistants/deleteAssistant) function
+To cancel an in-progress run:
+
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
-openai |> Assistants.delete(assistant_id)
+{:ok, cancel_result} = openai |> Evals.cancel_run(eval_id, run_id)
 ```
 
-### List Assistants
+#### List Runs
 
-We use [`Assistant.list()`](https://platform.openai.com/docs/api-reference/assistants/listAssistants) to get a list of assistants
+To get all runs for an evaluation:
+
+<!-- livebook:{"force_markdown":true} -->
 
 ```elixir
-assts = openai |> Assistants.list()
+{:ok, runs} = openai |> Evals.get_runs(eval_id)
+```
+
+#### Delete Run
+
+To delete a run:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+{:ok, delete_result} = openai |> Evals.delete_run(eval_id, run_id)
+```
+
+### Working with Output Items
+
+Runs produce output items that contain the evaluation results:
+
+#### List Output Items
+
+To get all output items for a run:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+{:ok, output_items} = openai |> Evals.list_run_output_items(eval_id, run_id)
+```
+
+#### Get Output Item
+
+To retrieve a specific output item:
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+output_item_id = "some_output_item_id"
+{:ok, output_item} = openai |> Evals.get_run_output_item(eval_id, run_id, output_item_id)
 ```
 
 ## Vector Stores
 
 ```elixir
-alias OpenaiEx.Beta.VectorStores
-alias OpenaiEx.Beta.VectorStores.Files
-alias OpenaiEx.Beta.VectorStores.File.Batches
+alias OpenaiEx.VectorStores
+alias OpenaiEx.VectorStores.Files
+alias OpenaiEx.VectorStores.File.Batches
 ```
 
 ### Create vector store
@@ -1581,11 +1862,38 @@ First we recreate the vector store above
 {:ok, vector_store} = openai |> VectorStores.create(VectorStores.new(name: "HR Documents"))
 ```
 
+```elixir
+vsf_url = "https://raw.githubusercontent.com/restlessronin/openai_ex/main/assets/cyberdyne.txt"
+vector_store_file = OpenaiEx.new_file(name: vsf_url, content: fetch_blob.(ftf_url))
+#vector_store_file = OpenaiEx.new_file(path: Path.join(__DIR__, "../assets/cyberdyne.txt"))
+upload_req = OpenaiEx.Files.new_upload(file: vector_store_file, purpose: "assistants")
+{:ok, upload_res} = openai |> OpenaiEx.Files.create(upload_req)
+file_id = upload_res["id"]
+```
+
 then attach the file id from earlier
 
 ```elixir
 vector_store_id = vector_store["id"]
 {:ok, vs_file} = openai |> VectorStores.Files.create(vector_store_id, file_id)
+```
+
+### Create vector store file with attributes
+
+The new stable API supports adding attributes (metadata) to vector store files:
+
+```elixir
+# Create a file with attributes for better organization
+file_params = %{
+  attributes: %{
+    "source" => "hr_documentation",
+    "category" => "policies",
+    "priority" => "high",
+    "last_updated" => "2024-01-15"
+  }
+}
+
+{:ok, vs_file_with_attrs} = openai |> VectorStores.Files.create(vector_store_id, file_id, file_params)
 ```
 
 ### Retrieve vector store file
@@ -1649,195 +1957,4 @@ Use [`VectorStores.File.Batches.list()`](https://platform.openai.com/docs/api-re
 openai |> VectorStores.File.Batches.list(vector_store_id, vsf_batch_id)
 ```
 
-## Thread
-
-```elixir
-alias OpenaiEx.Beta.Threads
-alias OpenaiEx.Beta.Threads.Messages
-```
-
-### Create thread
-
-Use the [`Thread.create()`] function to create threads. A thread can be created empty or with messages.
-
-```elixir
-{:ok, empty_thread} = openai |> Threads.create()
-
-msg_hr =
-  Messages.new(
-    role: "user",
-    content: "What company do we work at?",
-    attachments: [%{file_id: file_id, tools: [%{type: "file_search"}]}]
-  )
-
-msg_ai = Messages.new(role: "user", content: "How does AI work? Explain it in simple terms.")
-
-thrd_req = Threads.new(messages: [msg_hr, msg_ai])
-
-{:ok, thread} = openai |> Threads.create(thrd_req)
-```
-
-### Retrieve thread
-
-[`Thread.retrieve()`](https://platform.openai.com/docs/api-reference/threads/getThread) can be used to get the thread parameters given the id.
-
-```elixir
-thread_id = thread["id"]
-openai |> Threads.retrieve(thread_id)
-```
-
-### Modify thread
-
-The metadata for a thread can be modified using [`Thread.update()`](https://platform.openai.com/docs/api-reference/threads/modifyThread)
-
-```elixir
-openai |> Threads.update(thread_id, %{metadata: %{modified: "true", user: "abc123"}})
-```
-
-### Delete thread
-
-Use [`Thread.delete()`](https://platform.openai.com/docs/api-reference/threads/deleteThread) to delete a thread
-
-```elixir
-openai |> Threads.delete(thread_id)
-```
-
-Verify deletion
-
-```elixir
-openai |> Threads.retrieve(thread_id)
-```
-
-## Messages
-
-### Create message
-
-You can create a single message for a thread using [`Message.create()`](https://platform.openai.com/docs/api-reference/messages/createMessage)
-
-```elixir
-thread_id = empty_thread["id"]
-
-{:ok, message} = openai |> Threads.Messages.create(thread_id, msg_hr)
-```
-
-### Retrieve message
-
-Use [`Message.retrieve()`] to retrieve a message
-
-```elixir
-message_id = message["id"]
-openai |> Threads.Messages.retrieve(%{thread_id: thread_id, message_id: message_id})
-```
-
-### Modify message
-
-The metadata for a message can be modified by [`Message.update()`]
-
-```elixir
-metadata = %{modified: "true", user: "abc123"}
-
-upd_msg_req =
-  Threads.Messages.new(thread_id: thread_id, message_id: message_id, metadata: metadata)
-
-{:ok, message} = openai |> Threads.Messages.update(upd_msg_req)
-```
-
-### List messages
-
-Use [`Message.list()`] to get all the messages for a given thread
-
-```elixir
-openai |> Threads.Messages.list(thread_id)
-```
-
-## Runs
-
-```elixir
-alias OpenaiEx.Beta.Threads.Runs
-```
-
-### Create run
-
-A run represents an execution on a thread. Use to [`Run.create()`](https://platform.openai.com/docs/api-reference/runs/createRun) with an assistant on a thread
-
-```elixir
-{:ok, math_assistant} = openai |> Assistants.create(math_assistant_req)
-math_assistant_id = math_assistant["id"]
-
-run_req = Runs.new(thread_id: thread_id, assistant_id: math_assistant_id)
-
-{:ok, run} = openai |> Runs.create(run_req)
-```
-
-#### Streaming
-
-It is possible to stream the result of executing a run or resuming a run after submitting tool outputs. To accomplish this, pass `stream: true` to the `create`, `create_thread_and_run` and `submit_tool_outputs` functions.
-
-```elixir
-{:ok, run_stream} = openai |> Runs.create(run_req, stream: true)
-IO.puts(inspect(run_stream))
-IO.puts(inspect(run_stream.task_pid))
-run_stream.body_stream |> Stream.flat_map(& &1) |> Enum.each(fn x -> IO.puts(inspect(x)) end)
-```
-
-### Retrieve run
-
-Retrieve a run using [`Run.retrieve()`](https://platform.openai.com/docs/api-reference/runs/getRun)
-
-```elixir
-run_id = run["id"]
-openai |> Runs.retrieve(%{thread_id: thread_id, run_id: run_id})
-```
-
-### Modify run
-
-The run metadata can be modified using the [`Run.update()`](https://platform.openai.com/docs/api-reference/runs/modifyRun) function
-
-```elixir
-openai
-|> Runs.update(%{
-  thread_id: thread_id,
-  run_id: run_id,
-  metadata: %{user_id: "user_zmVY6FvuBDDwIqM4KgH"}
-})
-```
-
-### List runs
-
-List the runs belonging to a thread using [`Run.list()`](https://platform.openai.com/docs/api-reference/runs/listRuns)
-
-```elixir
-# Basic usage
-openai |> Runs.list([
-  thread_id: thread_id
-])
-
-# With optional parameters
-openai |> Runs.list([
-  thread_id: thread_id,
-  limit: 10, 
-  order: "desc", 
-  include: ["run_steps"]
-])
-```
-
-### Submit tool outputs to a run
-
-When a run has the `status`: "requires_action" and `required_action.type` is `submit_tool_outputs`, the [`Run.submit_tool_outputs()`](https://platform.openai.com/docs/api-reference/runs/submitToolOutputs) can be used to submit the outputs from the tool calls once they're all completed. All outputs must be submitted in a single request.
-
-```elixir
-openai
-|> Runs.submit_tool_outputs(%{
-  thread_id: thread_id,
-  run_id: run_id,
-  tool_outputs: [%{tool_call_id: "foobar", output: "28C"}]
-})
-```
-
-### Cancel a run
-
-You can cancel a run `in_progress` using [`Run.cancel()`](https://platform.openai.com/docs/api-reference/runs/cancelRun)
-
-```elixir
-openai |> Runs.cancel(%{thread_id: thread_id, run_id: run_id})
-```
+<!-- livebook:{"offset":57214,"stamp":{"token":"XCP.z1axmAf9dYEDyxHpTqwYNb9xsKxtQ0e34aXPGNlDLYdNMj9M14VTz11dtMfMehvDhZ2oY8qJqKWQvkI0g3a4Szxl1HgB2a00a9aJkpsHgAW-po9xI8_PSxw","version":2}} -->
